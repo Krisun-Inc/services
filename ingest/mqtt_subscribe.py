@@ -79,9 +79,10 @@ class MqttSubscriber:
             query = (
 
                 "INSERT INTO iot_device_data (Device_ID, Affiliated_Org, PubSub_Topic, "
-                "Temperature_C, Relative_Humidity, AirPressure_hpa, "
+                "Temperature_C, `Relative_Humidity_%`, AirPressure_hpa, "
                 "CO2_ppm, VOCIndex, PM_1_0, PM_2_5, PM_10_0) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+
             )
             values = (
                 device_id, affiliated_org, pubsub_topic,
