@@ -1,14 +1,35 @@
 from awscrt import mqtt, http
 from awsiot import mqtt_connection_builder
+import mysql.connector
 import threading
 import time
 import json
 import sys
 import logging
+import uuid
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Database connection parameters
+db_config = {
+    'host': 'iot-databse.cluster-c9iew80c2mxg.us-east-1.rds.amazonaws.com',
+    'port': 3306,
+    'user': 'admin',
+    'password': 'Vancouver#2020',
+    'database': 'iot_data',
+}
+
+# Connect to the database
+try:
+    connection = mysql.connector.connect(**db_config)
+    cursor = connection.cursor()
+    logger.info(f"successfully connected to {db_config['database']}")
+
+except mysql.connector.Error as err:
+    logger.error(f"Error: {err}")
+
 
 class MqttSubscriber:
     def __init__(self, iot_endpoint, root_ca_path, private_key_path, cert_path, client_id, topic):
@@ -38,7 +59,42 @@ class MqttSubscriber:
                 sys.exit(1)
 
     def on_message_received(self, topic, payload, dup, qos, retain, **kwargs):
-        logger.info(f"Received message from topic '{topic}': {payload.decode()}")
+        try:
+            message = json.loads(payload.decode('utf-8'))
+
+            # Extract data from the message
+            device_id = str(uuid.uuid4())
+            affiliated_org = "KRISUN" #comes from organization device will be purchased from, PROJECT SHOPPING CART
+            pubsub_topic = topic #identifies the device name, PROJECT SHOPPING CART
+            temperature_c = message.get('Temperature_C', 0.0)
+            humidity_percent = message.get('Relative_Humidity', 0.0)
+            air_pressure_hpa = message.get('AirPressure_hpa', 0.0)
+            co2_ppm = message.get('CO2_ppm', 0)
+            voc_index = message.get('VOCIndex', 0)
+            pm_1_0 = message.get('PM_1.0', 0)
+            pm_2_5 = message.get('PM_2.5', 0)
+            pm_10_0 = message.get('PM_10.0', 0)
+
+            # Insert data into the database
+            query = (
+
+                "INSERT INTO iot_device_data (Device_ID, Affiliated_Org, PubSub_Topic, "
+                "Temperature_C, Relative_Humidity, AirPressure_hpa, "
+                "CO2_ppm, VOCIndex, PM_1_0, PM_2_5, PM_10_0) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            )
+            values = (
+                device_id, affiliated_org, pubsub_topic,
+                temperature_c, humidity_percent, air_pressure_hpa,
+                co2_ppm, voc_index, pm_1_0, pm_2_5, pm_10_0
+            )
+
+            cursor.execute(query, values)
+            connection.commit()
+
+            logger.info("Data successfully inserted into the database.")
+        except Exception as e:
+            logger.error(f"Error processing message: {str(e)}")
 
     def on_connection_success(self, connection, callback_data):
         logger.info(f"Connection Successful with return code: {callback_data.return_code}, Session present: {callback_data.session_present}")
@@ -96,7 +152,7 @@ if __name__ == '__main__':
         private_key_path="aws_iot_core_certificates/b6b6d20d162669b8b68c788104f5feafd86ab4a1e517fb5436cc3f2e5f3e3717-private.pem.key",
         cert_path="aws_iot_core_certificates/b6b6d20d162669b8b68c788104f5feafd86ab4a1e517fb5436cc3f2e5f3e3717-certificate.pem.crt",
         client_id="ingest-service",
-        topic="Temp_Humi"
+        topic="Temp_Humi" #needs to be autopopulated, PROJECT SHOPPING CART
     )
 
     subscriber.run()
