@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app/
 
 # Run your Python script
-CMD ["python", "mqtt_subscribe.py"]
+CMD ["python3", "mqtt_subscribe.py"]
