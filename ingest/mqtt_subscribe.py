@@ -39,6 +39,36 @@ class MqttSubscriber:
         self.cert_path = cert_path
         self.client_id = client_id
         self.topic = topic
+        self.mqtt_connection = None
+
+    def connect_and_subscribe(self):
+        self.mqtt_connection = mqtt_connection_builder.mtls_from_path(
+            endpoint=self.iot_endpoint,
+            cert_filepath=self.cert_path,
+            pri_key_filepath=self.private_key_path,
+            ca_filepath=self.root_ca_path,
+            on_connection_interrupted=self.on_connection_interrupted,
+            on_connection_resumed=self.on_connection_resumed,
+            client_id=self.client_id,
+            clean_session=False,
+            keep_alive_secs=30,
+            on_connection_success=self.on_connection_success,
+            on_connection_failure=self.on_connection_failure,
+            on_connection_closed=self.on_connection_closed
+        )
+
+        logger.info(f"Connecting to {self.iot_endpoint} with client ID '{self.client_id}'...")
+        connect_future = self.mqtt_connection.connect()
+        connect_future.result()
+
+        logger.info(f"Subscribing to topic '{self.topic}'...")
+        subscribe_future, _ = self.mqtt_connection.subscribe(
+            topic=self.topic,
+            qos=mqtt.QoS.AT_LEAST_ONCE,
+            callback=self.on_message_received
+        )
+        subscribe_result = subscribe_future.result()
+        logger.info(f"Subscribed with {subscribe_result['qos']}")
 
     def on_connection_interrupted(self, connection, error, **kwargs):
         logger.error(f"Connection interrupted. Error: {error}")
@@ -146,14 +176,30 @@ class MqttSubscriber:
             logger.info("Disconnecting...")
             mqtt_connection.disconnect()
 
-if __name__ == '__main__':
-    subscriber = MqttSubscriber(
-        iot_endpoint="a2mlk4ov123uc2-ats.iot.us-east-1.amazonaws.com",
-        root_ca_path="aws_iot_core_certificates/AmazonRootCA1 (1).pem",
-        private_key_path="aws_iot_core_certificates/b6b6d20d162669b8b68c788104f5feafd86ab4a1e517fb5436cc3f2e5f3e3717-private.pem.key",
-        cert_path="aws_iot_core_certificates/b6b6d20d162669b8b68c788104f5feafd86ab4a1e517fb5436cc3f2e5f3e3717-certificate.pem.crt",
-        client_id="ingest-service",
-        topic="Temp_Humi" #needs to be autopopulated, PROJECT SHOPPING CART
-    )
+class MqttSubscriberFactory:
+    @staticmethod
+    def create_subscriber(topic):
+        return MqttSubscriber(
+            iot_endpoint="a2mlk4ov123uc2-ats.iot.us-east-1.amazonaws.com",
+            root_ca_path="aws_iot_core_certificates/AmazonRootCA1 (1).pem",
+            private_key_path="aws_iot_core_certificates/b6b6d20d162669b8b68c788104f5feafd86ab4a1e517fb5436cc3f2e5f3e3717-private.pem.key",
+            cert_path="aws_iot_core_certificates/b6b6d20d162669b8b68c788104f5feafd86ab4a1e517fb5436cc3f2e5f3e3717-certificate.pem.crt",
+            client_id=f"ingest-service-{topic}",
+            topic=topic
+        )
 
-    subscriber.run()
+
+if __name__ == '__main__':
+    topics = ["Temp_Humi_1", "Temp_Humi_2", "Temp_Humi_3", "Temp_Humi_4", "Temp_Humi_5"]
+    threads = []
+
+    for topic in topics:
+        subscriber = MqttSubscriberFactory.create_subscriber(topic)
+        thread = threading.Thread(target=subscriber.run)
+        threads.append(thread)
+
+    for thread in threads:
+        thread.start()
+
+    for thread in threads:
+        thread.join()
